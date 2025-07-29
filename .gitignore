@@ -47,3 +47,10 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# raw faam data
+
+data/faam_raw
+
+# 
+data_config.txt
