@@ -50,7 +50,7 @@ rsconnect/
 
 # raw faam data
 
-data/faam_raw
+data/*
 
 # 
 data_config.txt
