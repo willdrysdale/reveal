@@ -58,6 +58,7 @@ nitrateDat = flightFiles |>
   separate_wider_delim(name, names = c("spec", "type"), delim =  "_") |> 
   pivot_wider(names_from = "type") |> 
   select(-flag) |> 
+  mutate(mr = ifelse(between(mr, -1e6, 1e6), mr, NA)) |> 
   mutate(
     date = nanotime::nano_floor(date, nanotime::as.nanoduration("00:00:10")),
     w = 1/(u^2),
@@ -65,16 +66,16 @@ nitrateDat = flightFiles |>
   ) |> 
   group_by(flightNumber, date, spec) |> 
   summarise(
-    mrw = sum(wx, na.rm = F)/sum(w, na.rm = T), # mixing ratio weighted by uncertainty
-    u_mrw = sqrt(1/sum(w, na.rm = T)), # combined uncertainty relating to mrw
+    # mrw = sum(wx, na.rm = F)/sum(w, na.rm = T), # mixing ratio weighted by uncertainty
+    # u_mrw = sqrt(1/sum(w, na.rm = T)), # combined uncertainty relating to mrw
     mr = mean(mr, na.rm = T), # mean
-    u_mr = sqrt(sum((u^2))), # root of sum of squares
-    lod = mean(lod, na.rm = T)/10, # mean LOD additionally reduced by 10, as LOD is expeceted to improve by root of change in orders of magnitude 0.1s -> 10s == x 100, therfore / sqrt(100) == 10 
+    u = sqrt((sum((u^2))/n())), # root of sum of squares / N
+    lod = mean(lod, na.rm = T)/sqrt(n()), # mean LOD additionally reduced by ~10, as LOD is expected to improve by root of N samples
   ) |> 
   ungroup() |> 
   pivot_wider(
     names_from = "spec",
-    values_from = c("mrw", "u_mrw", "mr", "u_mr", "lod"),
+    values_from = c("mr", "u", "lod"), #c("mrw", "u_mrw", "mr", "u_mr", "lod"),
     names_glue = "{spec}_{.value}")
 
 
@@ -94,7 +95,6 @@ fggaDat = flightFiles |>
   select(flightNumber, data) |> 
   unnest(data)
 
-
 # Merge -------------------------------------------------------------------
 
 dat = list(coreDat,
@@ -104,3 +104,23 @@ dat = list(coreDat,
   ungroup()
 
 saveRDS(dat, here::here('data','faam_merge','merge.RDS'))
+write.csv(dat, here::here('data','faam_merge','reveal_merge.csv'))
+
+# SWAS --------------------------------------------------------------------
+
+swasFiles = list.files(here::here('data','was'), full.names = T)
+
+datSwas = map_df(swasFiles, read_york_gc_fid_lab) |> 
+  nest_join(dat, 
+            by = join_by(between(y$date, x$start_sample_date_time, x$stop_sample_date_time))) |> 
+  rowwise() |> 
+  mutate(dat = dat |> 
+           select(-flightNumber) |> 
+           summarise_all(mean, na.rm = T),
+         flight = tolower(flight)
+           ) |> 
+  rename(flightNumber = flight) |> 
+  unnest(dat)
+
+saveRDS(datSwas, here::here('data','faam_merge','swasMerge.RDS'))
+write.csv(datSwas, here::here('data','faam_merge','swas_merge.csv'))
