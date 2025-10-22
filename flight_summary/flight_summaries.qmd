@@ -1,8 +1,8 @@
 ---
 title: "REVEAL-NOx Flight Summaries"
 theme:
-  dark: solar
   light: cosmo
+  dark: solar
 format: 
   html:
     toc: true
@@ -19,7 +19,7 @@ editor_options:
 ```{ojs}
 //| output: false
 require("https://cdn.jsdelivr.net/npm/juxtaposejs@1.1.6/build/js/juxtapose.min.js")
-  .catch(() => null)
+.catch(() => null)
 
 ```
 
@@ -41,6 +41,44 @@ if(!dir.exists(here::here('flight_summary','plots'))){
   dir.create(here::here('flight_summary','plots'))
 }
 
+regions = tribble(
+  ~lat, ~lon, ~region,
+  55.90, -2.17, "Transect Coast",
+  55.90, -2.51, "Transect Coast",
+  57.10, -2.51, "Transect Coast",
+  57.10, -1.73, "Transect Coast",
+  56.00, -1.73, "Transect Coast",
+  54.00, -0.50, "Transect Coast",
+  53.50, -0.50, "Transect Coast",
+  55.00, -1.95, "Transect Coast",
+  55.90, -2.17, "Transect Coast",
+  55.80, -2.20, "Transect Land",
+  55.80, -2.17, "Transect Land",
+  54.70, -1.95, "Transect Land",
+  51.80, -1.95, "Transect Land",
+  51.80, -2.01, "Transect Land",
+  54.50, -2.01, "Transect Land",
+  55.80, -2.25, "Transect Land",
+  55.80, -2.20, "Transect Land",
+  53.46,  0.66, "L602",
+  53.21,  2.61, "L602",
+  53.19,  2.61, "L602",
+  53.30,  1.50, "L602",
+  53.43,  0.66, "L602",
+  53.46,  0.66, "L602",
+  52.98,  1.05, "L603",
+  52.90,  1.80, "L603",
+  52.82,  2.40, "L603",
+  52.80,  2.40, "L603",
+  52.96,  1.05, "L603",
+  52.98,  1.05, "L603"
+) |> 
+  st_as_sf(coords = c("lon", "lat"), crs = "WGS84") |> 
+  group_by(region) |> 
+  summarise(do_union = FALSE) |> 
+  st_cast("POLYGON") 
+
+
 lim = tibble(
   lat = c(49,60),
   lon = c(-12, 2.5)
@@ -48,13 +86,23 @@ lim = tibble(
   st_as_sf(coords = c("lon", "lat"), crs = "WGS84")
 
 dat = readRDS(here::here('data','faam_merge','merge.RDS')) |> 
-  filter(flightNumber != "c392") # remove test flight
+  filter(flightNumber != "c392") |>  # remove test flight
+  mutate(
+    alt_flag = case_when(
+      between(ALT_GIN, 9000, 9400) ~ 1,
+      between(ALT_GIN, 9400, 9600) ~ 2,
+      ALT_GIN > 10000 ~ 3, 
+      TRUE ~ 0
+    ),
+    alt_rate = abs(ALT_GIN-lag(ALT_GIN,2)) < 20
+  )
 
 datSwas = readRDS(here::here('data','faam_merge','swasMerge.RDS'))
 
 datSf = dat |> 
   st_as_sf(coords = c("LON_GIN", "LAT_GIN"), crs = "WGS84") |> 
-  mutate(ALT_GIN_BIN = ALT_GIN - ALT_GIN %% 200)
+  mutate(ALT_GIN_BIN = ALT_GIN - ALT_GIN %% 200) |> 
+  st_join(regions)
 
 flightFiles = list_flight_data_local(here::here('data','faam_raw')) |> 
   nest_by(flightNumber) |> 
@@ -77,8 +125,8 @@ nitrate_c409_10hz = flightFiles |>
   mutate(
     data = read_faam_nitrates(
       filePath, 
-      startDate = startDate, 
-      endDate = endDate,
+      startDate = "2025-06-03T09:51:40+00:00", 
+      endDate = "2025-06-03T11:23:20+00:00",
       averageNanoString = "00:00:00.1",
       allowReducedQuality = TRUE,
       allowSuspect = TRUE
@@ -92,8 +140,20 @@ nitrate_c409_10hz = flightFiles |>
 
 ```{r, include = FALSE}
 png(here::here('flight_summary','plots','psuedo-log.png'))
-plot(scales::transform_pseudo_log(base = 10, sigma = 1), xlim = c(-100, 100))
-lines(scales::transform_log(base = 10), xlim = c(-100, 100), col = "red")
+
+ggplot(data.frame(x = seq(-100, 100, 1)), aes(x))+
+  geom_function(fun = scales::transform_log10()$transform, aes(colour = "log<sub>10</sub>"))+
+  geom_function(fun = scales::transform_pseudo_log(sigma = 1, base = 10)$transform, aes(colour = "pseudo-log<sub>10</sub>"))+
+  scale_x_continuous(name = "Input")+
+  scale_y_continuous(name = "Output")+
+  scale_colour_manual(values = c("red","black"), name = "")+
+  ggtitle("Transformer: pseudo-log<sub>10</sub> vs log<sub>10</sub>")+
+  theme_minimal()+
+  theme(
+    title = element_markdown(),
+    legend.text = element_markdown()
+  )
+
 dev.off()
 ```
 
@@ -106,13 +166,17 @@ Eight flights aboard the [FAAM aircraft](https://www.faam.ac.uk/) were conducted
 The counter-clockwise case:
 
 1.  Take off, heading east and climb to flight level 300
-2.  Fly a circuit of off the East of England, following flight lanes L603 and L602
-3.  Turn north and fly towards Aberdeen along the east coast of the UK
+2.  Fly a circuit of off the East of England, following flight lanes **L603** and **L602**
+3.  Turn north and fly towards Aberdeen along the east coast of the UK (**Transect Coast**)
 4.  Just south of Aberdeen, turn south and ascend to flight level 340
-5.  Fly due south, roughly tracing the 2° west line of longitude until south of Birmingham
+5.  Fly due south, roughly tracing the 2° west line of longitude until south of Birmingham (**Transect Land**)
 6.  Recover to Cranfield
 
-All flights were flown as doubles, with the direction reversing in the afternoon, such that the circuit and 2° W transect were flown at both FL300 and FL340 each day. Flight tracks can be viewed below.
+All flights were flown as doubles, with the direction reversing in the afternoon, such that the circuit and 2° W transect were flown at both FL300 and FL340 each day. Flight tracks can be viewed below, coloured by altitude or region, for the latter only level runs above 9000 m are shown.
+
+::: {.panel-tabset}
+
+## Altitude
 
 ```{r}
 
@@ -163,6 +227,57 @@ map
 
 
 ```
+
+## Region
+
+```{r}
+
+flightPathsRegion = datSf |> 
+  filter(!is.na(region)) |> 
+  group_by(flightNumber, region) |> 
+  summarise(do_union = FALSE) |> 
+  st_cast("LINESTRING")
+
+regionNames = unique(flightPathsRegion$region)
+
+col = tibble(region = regionNames,
+             hex = RColorBrewer::brewer.pal(length(regionNames), "Set1"))
+
+plotDatRegion = flightPathsRegion |> 
+  ungroup() |> 
+  left_join(col, "region")
+
+flights = unique(plotDatRegion$flightNumber)
+
+mapRegion = leaflet() |> 
+  addTiles()
+
+for(i in 1:length(flights)){
+  for(j in 1:length(regionNames)){
+    mapRegion = mapRegion |> 
+      addPolylines(
+        data = filter(plotDatRegion, flightNumber == flights[i], region == regionNames[j]),
+        label = regionNames[j],
+        group = flights[i],
+        color = ~hex,
+        opacity = 0.8
+      )
+  }
+}
+
+mapRegion = mapRegion |> 
+  addLayersControl(
+    baseGroups = flights,
+    options = layersControlOptions(
+      collapsed = FALSE
+    )
+  ) 
+
+mapRegion
+
+```
+
+:::
 
 ------------------------------------------------------------------------
 
@@ -293,7 +408,7 @@ g_nitrate_10 = nitratePlotDat_10Hz |>
   geom_errorbar(aes(seconds_since_midnight, ymin = mr-u, ymax = mr+u))+
   geom_point(aes(seconds_since_midnight, mr, colour = lod_flag))+
   geom_line(aes(seconds_since_midnight, lod), colour = "black")+
-    scale_colour_manual(values = c("green4", "#D9544D"), name = "LOD Flag")+
+  scale_colour_manual(values = c("green4", "#D9544D"), name = "LOD Flag")+
   scale_y_continuous(
     trans = scales::pseudo_log_trans(base = 10,sigma = 1),
     breaks = logbreaks,
@@ -337,9 +452,6 @@ g_nitrate_1 = nitratePlotDat_1hz |>
 png(here::here('flight_summary','plots','nitrate_1.png'), res = 300, width = 3000, height = 2250)
 print(g_nitrate_1)
 dev.off()
-
-
-
 
 ```
 
@@ -413,5 +525,83 @@ map2(nitrateList, toupper(names(overviewPlotList)),
 ```
 :::
 
-[^1]: The psuedo-log transformer:
-  ![](plots/psuedo-log.png)
+### Data by Region and Altitude
+
+```{r, include = FALSE}
+
+altFilteredNOx = datSf |> 
+  select(date, flightNumber, ALT_GIN, contains("no"), contains("no2"), alt_rate, geometry) |> 
+  pivot_longer(-c(date, flightNumber, ALT_GIN, alt_rate, geometry), names_to = c("spec", "stat"), names_sep = "_") |> 
+  pivot_wider(names_from = "stat") |> 
+  mutate(
+    lod_flag = (mr - u) < lod,
+    alt_flag = ALT_GIN < 10000,
+    spec = ifelse(spec == "no", "NO / pptv", "NO<sub>2</sub> / pptv")
+    ) |> 
+  st_join(regions) |> 
+  filter(!lod_flag,
+         !is.na(region),
+         !is.na(mr),
+         alt_rate,
+         ALT_GIN > 8000)
+
+png(here::here('flight_summary','plots','alt-plot.png'))
+altFilteredNOx |> 
+  group_by(flightNumber) |> 
+  mutate(
+    date = date |> 
+      as_datetime(tz = "UTC") |> 
+      as.numeric(),
+    duration = date-min(date)) |> 
+  ggplot()+
+  geom_point(aes(duration, ALT_GIN, colour = toupper(flightNumber)))+
+  scale_y_continuous(name = "Altitude / m")+
+  scale_x_continuous(name = "Duration / s")+
+  scale_colour_discrete(name = "")+
+  facet_wrap(~region)+
+  theme_minimal()
+dev.off()
+
+g_nox_density = altFilteredNOx |> 
+  mutate(ALT_GIN = round(ALT_GIN, -3)) |> 
+  ggplot()+
+  geom_density(aes(mr, fill = factor(ALT_GIN)), alpha = 0.5)+
+  scale_x_continuous(trans = "log10", name = "Mixing Ratio / pptv")+
+  scale_y_continuous(name = "", breaks = NULL)+
+  scale_fill_manual(values = c("darkblue", "darkgreen", "darkred"),
+                    name = "Altitude (nearest 1000) / m"
+                    )+
+  facet_grid(spec ~ region)+
+  theme_minimal()+
+  theme(
+    strip.text = element_markdown(),
+    legend.position = "bottom"
+  )
+
+```
+
+For quick examination, plotted below are the densities of NO and NO<sub>2</sub> mixing across all of the REVEAL flights after the processing described above. Altitude has been rounded to the nearest 1000 m as a rough grouping. Enhanced NO<sub>x</sub> is generally seen as altitude increases, and this is consistent with the expectation that FL300 was not quite high enough to see the effects of the jetways. The non-rounded altitude data is shown in the footnotes [^2].
+
+```{r}
+print(g_nox_density)
+```
+
+## Ozone
+
+
+## Particles
+
+
+## Whole Air Samples
+
+
+
+
+
+[^1]: The psuedo-log transformer:\
+![](plots/psuedo-log.png)
+\
+
+
+[^2]: Altitude profiles for all flights that are above 9000 m and in a defined 'region':
+![](plots/alt-plot.png)
