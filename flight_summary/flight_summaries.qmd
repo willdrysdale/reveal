@@ -475,7 +475,7 @@ Move the slider to switch between the 10 Hz and 10 s data.
 ![](plots/nitrate_10.png) ![](plots/nitrate_1.png)
 :::
 
-Data recover is much improved when treating the LOD in this fashion. The below plots shows 10 s data for all flights
+Data recovery is much improved when treating the LOD in this fashion. The below plots shows 10 s data for all flights
 
 ```{r}
 

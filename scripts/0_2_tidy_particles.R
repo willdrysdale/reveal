@@ -1,3 +1,4 @@
+library(faamr)
 library(dplyr)
 library(purrr)
 library(tidyr)
@@ -35,6 +36,12 @@ files = tibble(
   ) 
 
 
+dirOut = here::here('data','particles_non_ceda','tidy')
+
+if(!dir.exists(dirOut)){
+  dir.create(dirOut)
+}
+
 
 # AMS ---------------------------------------------------------------------
 
@@ -67,6 +74,8 @@ datAMS = files |>
   ) |> 
   filter(!is.na(flightNumber)) |> 
   select(date, flightNumber, chl, nh4, no3, org, so4)
+
+saveRDS(datAMS, here::here(dirOut, "AMS.RDS"))
   
 # SP2 ---------------------------------------------------------------------
 
@@ -98,6 +107,7 @@ datSP2 = files |>
   filter(!is.na(flightNumber)) |> 
   select(date, flightNumber, mass_bc_ugm3, n_bc)
 
+saveRDS(datSP2, here::here(dirOut, "SP2.RDS"))
 
 
 # SMPS --------------------------------------------------------------------
