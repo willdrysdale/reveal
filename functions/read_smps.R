@@ -1,36 +1,29 @@
-lin_mod_diameter = function(n, d, t){
-  
-  data.frame(
-    n_start = n,
-    d_start = d
-  ) |> 
+regrid_size_distribution = function(n, d, binOut){
+
+  dat = data.frame(
+    n = n,
+    log10d_start = log10(d)
+    ) |> 
     tibble::tibble() |> 
     dplyr::mutate(
-      d_end = dplyr::lead(d_start),
-      n_end = dplyr::lead(n_start),
-      idx = dplyr::row_number()
-    ) |> 
-    dplyr::nest_by(idx) |> 
+      log10d_end = dplyr::lead(log10d_start),
+      log10d_center = ((log10d_end-log10d_start)/2)+log10d_start
+    )
+
+  distribution <- approxfun(dat$log10d_center, dat$n, rule = 2)
+
+  binOut |> 
+    dplyr::rowwise() |> 
+    dplyr::mutate(int = list(integrate(distribution, diameter_start, diameter_end))) |>
     dplyr::mutate(
-      data = data |> 
-        tidyr::pivot_longer(tidyselect::everything(), names_sep = "_", names_to = c("type", "pos")) |> 
-        tidyr::pivot_wider(names_from = "type") |> 
-        list()
-    ) |> 
-    dplyr::mutate(
-      mod = lm(formula = n~d, data = data) |> 
-        list(),
-      slope = coef(mod)[2],
-      intercept = coef(mod)[1],
-      d_start = data$d[1], 
-      d_end = data$d[2],
-      t = t
-    ) |>
-    dplyr::ungroup() |> 
-    dplyr::select(t, d_start, d_end, slope, intercept)
+      range = (diameter_end-diameter_start),
+      n_out = int$value/range,
+      n_out_abserr = int$abs.error) |>
+    dplyr::select(-int)
+  
 }
 
-read_smps = function(filepath, d_out = NULL){
+read_smps_arrays = function(filepath){
   
   lines = readLines(filepath)
   
@@ -72,83 +65,54 @@ read_smps = function(filepath, d_out = NULL){
     tibble::tibble() |> 
     setNames(c("t", "tn"))
   
-  d_mod_list = list()
-  
-  # Do this without looping to speed up?
-  cli::cli_progress_bar(
-    format = "{cli::pb_spin} Regridding timestep: [{cli::pb_current}/{cli::pb_total}]. ETA:{cli::pb_eta}",
-    total = nrow(dat_t))
-  for(i in 1:nrow(dat_t)){
-    cli::cli_progress_update()
-    d_mod_list[[i]] = lin_mod_diameter(
-      n = dat_n[i,], 
-      d = dat_d[i,], 
-      t = dat_t[i,1])
-  }
-  
-  d_mod = dplyr::bind_rows(d_mod_list)
-  
-  if(is.null(d_out)){
-    selected_d = tibble::tibble(d = seq(min(dat_d[1,], na.rm = T), max(dat_d[1,], na.rm = T), 30))
-  }else{
-    selected_d = tibble::tibble(d = d_out)
-  }
-  
-  grid = data.frame(t = dat_t[,1]) |> 
-    tibble::tibble(d = selected_d |> 
-             list()) |> 
-    tidyr::unnest(d)
-  
-  regridded_data = grid |> 
-    dplyr::left_join(
-      d_mod, 
-      by = dplyr::join_by(t, dplyr::between(d, d_start, d_end, bounds = "[)"))
-    ) |> 
-    dplyr::mutate(n = (slope*d)+intercept,
-                  dnd_logd = n/log(d))
-  
-  regridded_data
+  list(number = dat_n,
+       diamater = dat_d,
+       time_total = df_t)
   
 }
 
-regridded_data = read_smps(
-  filepath = "data/particles_non_ceda/raw/SMPS/C412 export.csv"
-)
+create_smps_binOut_from_lower_bounds = function(bin_lower, applyLog10 = TRUE){
+  
+  if(applyLog10){
+    bin_lower = log10(bin_lower)
+  }
+  
+  data.frame(
+    diameter_start = bin_lower
+  ) |> 
+    dplyr::mutate(diameter_end = dplyr::lead(diameter_start)) |> 
+    dplyr::filter(!is.na(diameter_end))
+}
 
-regridded_data_fine = read_smps(
-  filepath = "data/particles_non_ceda/raw/SMPS/C412 export.csv",
-  d_out = seq(20, 320, 1)
-)
+read_smps = function(filepath, binOut = NULL){
+  
+  smpsList = read_smps_arrays(filepath)
+  
+  if(is.null(binOut)){
+    binOut = create_smps_binOut_from_lower_bounds(
+      smpsList$d[1,]
+    )
+  }
+  
+  
+  templist = list()
+  for(i in 1:nrow(smpsList$n)){
+    
+    templist[[i]] = regrid_size_distribution(smpsList$n[i,], smpsList$d[i, ],binOut)
+    
+  }
+  
+  purrr::map_df(1:nrow(smpsList$n),
+             ~{
+               regrid_size_distribution(smpsList$n[.x,], smpsList$d[.x, ],binOut) |> 
+                 dplyr::mutate(seconds_since_midnight = smpsList$time_total$t[.x])
+               
+             }, 
+             binOut = binOut
+             
+             ) |> 
+    dplyr::ungroup()
 
-library(ggplot2)
-library(patchwork)
-
-g1 = regridded_data |> 
-  dplyr::filter(t < 45000) |> 
-  ggplot()+
-  geom_tile(aes(t, d, fill = dnd_logd))+
-  scale_fill_viridis_c(
-    trans = scales::pseudo_log_trans(base = 10),
-    breaks = c(-10^(c(1:3)),0,10^(c(1:5))),
-    name = "d N/d ln(D)"
-  )+
-  theme_minimal()+
-  ggtitle("30 nm")
-
-g2 = regridded_data_fine |> 
-  dplyr::filter(t < 45000) |> 
-  ggplot()+
-  geom_tile(aes(t, d, fill = dnd_logd))+
-  scale_fill_viridis_c(
-    trans = scales::pseudo_log_trans(base = 10),
-    breaks = c(-10^(c(1:3)),0,10^(c(1:5))),
-    name = "d N/d ln(D)"
-  )+
-  theme_minimal()+
-  ggtitle("1 nm")
-
-
-
-g1/g2
+}
 
 
