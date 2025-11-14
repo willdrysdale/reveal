@@ -1,5 +1,5 @@
 ---
-title: "REVEAL-NOx Flight Summaries"
+title: "REducing aViation Emissions' uncertAin cLimate impacts: NO~x~"
 theme:
   light: cosmo
   dark: solar
@@ -97,7 +97,14 @@ dat = readRDS(here::here('data','faam_merge','merge.RDS')) |>
     alt_rate = abs(ALT_GIN-lag(ALT_GIN,2)) < 20
   )
 
-datSwas = readRDS(here::here('data','faam_merge','swasMerge.RDS'))
+datSwas = readRDS(here::here('data','faam_merge','swasMerge.RDS')) |> 
+  pivot_longer(-c(start_sample_date_time, stop_sample_date_time, comments, flightNumber, swas_case, swas_bottle, gc_date_time)) |> 
+  mutate(
+    type = ifelse(
+      name %in% c("O3_TECO", "no_mr", "no2_mr", "co2_drymole", "ch4_drymole", "chl", "nh4", "no3", "org", "so4", "mass_bc_ugm3", "n_bc"),
+      "other", 
+      "voc")
+  )
 
 datSf = dat |> 
   st_as_sf(coords = c("LON_GIN", "LAT_GIN"), crs = "WGS84") |> 
@@ -105,6 +112,10 @@ datSf = dat |>
   st_join(regions)
 
 flightFiles = list_flight_data_local(here::here('data','faam_raw')) |> 
+  mutate(r = faamr:::file_revision(basename(filePath))) |> 
+  group_by(flightNumber, fileType) |> 
+  filter(r == max(r)) |> 
+  ungroup() |> 
   nest_by(flightNumber) |> 
   mutate(corePath = data |> 
            filter(fileType == "core.nc") |> 
@@ -157,11 +168,20 @@ ggplot(data.frame(x = seq(-100, 100, 1)), aes(x))+
 dev.off()
 ```
 
-### REducing aViation Emissions' uncertAin cLimate impacts: NOx
 
-> “The chain of events from emissions of NOx to impacts on climate are complex and uncertain. Are these aviation NOx emissions responsible for a lot or a little warming or cooling? In this project we aim to constrain the uncertainty we have on these climate impacts by constraining the performance of models in representing the chemical cascades from aviation NOx emissions" - Professor Alex Archibald, speaking to [NCAS Comms](https://ncas.ac.uk/research-aircraft-measures-climate-important-nox-emissions-from-commercial-flights/)
+> “The chain of events from emissions of NO~x~ to impacts on climate are complex and uncertain. Are these aviation NOx emissions responsible for a lot or a little warming or cooling? In this project we aim to constrain the uncertainty we have on these climate impacts by constraining the performance of models in representing the chemical cascades from aviation NOx emissions" - Professor Alex Archibald, speaking to [NCAS Comms](https://ncas.ac.uk/research-aircraft-measures-climate-important-nox-emissions-from-commercial-flights/)
 
-Eight flights aboard the [FAAM aircraft](https://www.faam.ac.uk/) were conducted in June 2025 (C409 - C418) following roughly the same flight plan, either clockwise or counter-clockwise.
+------------------------------------------------------------------------
+
+This document provides a summary of the REVEAL-NO~x~ flights. It is primarily an overview of the flights and a discussion on processing the NO and NO~2~ data. It highlights other notable considerations, such as periods where flights passed through stratospheric air masses and biomass burning plumes. It also provides a brief overview of the VOC data from the SWAS canisters. 
+
+The code used to produce this document can be accessed on github, and the merged FAAM data can also be downloaded here. Efforts will be made to keep the merge up to date, but the versions on CEDA should always be considered the authoritative copies. The github repo includes code for downloading the data directly from CEDA using the faamr package.
+
+------------------------------------------------------------------------
+
+## Overview
+
+Eight flights aboard the [FAAM aircraft](https://www.faam.ac.uk/) were conducted between 2025/06/03 and 2025/06/12 (C409 - C418) following roughly the same flight plan, either clockwise or counter-clockwise.
 
 The counter-clockwise case:
 
@@ -173,6 +193,7 @@ The counter-clockwise case:
 6.  Recover to Cranfield
 
 All flights were flown as doubles, with the direction reversing in the afternoon, such that the circuit and 2° W transect were flown at both FL300 and FL340 each day. Flight tracks can be viewed below, coloured by altitude or region, for the latter only level runs above 9000 m are shown.
+
 
 ::: {.panel-tabset}
 
@@ -279,14 +300,12 @@ mapRegion
 
 :::
 
-------------------------------------------------------------------------
-
-## Overview
+Here time series of key measurements can be viewed for each flight.
 
 ```{r, include = FALSE}
 
 overviewPlotDat = dat |> 
-  select(date, flightNumber, ALT_GIN, no_mr, no2_mr, co2_drymole) |> 
+  select(date, flightNumber, ALT_GIN, no_mr, no2_mr, co2_drymole, O3_TECO, ch4_drymole) |> 
   mutate(date = as_datetime(date, tz = "UTC")) |>
   group_by(flightNumber) |> 
   mutate(flight_start = min(date),
@@ -300,7 +319,9 @@ overviewPlotDat = dat |>
       name == "ALT_GIN" ~ "Altitude / m",
       name == "co2_drymole" ~ "CO<sub>2</sub> / ppmv",
       name == "no_mr" ~ "NO / pptv",
-      name == "no2_mr" ~ "NO<sub>2</sub> / pptv"
+      name == "no2_mr" ~ "NO<sub>2</sub> / pptv",
+      name == "O3_TECO" ~ "O<sub>3</sub> / ppbv",
+      name == "ch4_drymole" ~ "CH<sub>4</sub> / ppbv"
     )
   )
 
@@ -336,7 +357,7 @@ for(i in 1:length(flights)){
 
 map2(overviewPlotList, toupper(names(overviewPlotList)),
      \(x, y) knitr::knit_child(
-       text = c(paste0("## ",y),"```{r, fig.height=7}","x","```"),
+       text = c(paste0("## ",y),"```{r, fig.height=8}","x","```"),
        envir = environment(), 
        quiet = TRUE
      )
@@ -537,7 +558,7 @@ altFilteredNOx = datSf |>
     lod_flag = (mr - u) < lod,
     alt_flag = ALT_GIN < 10000,
     spec = ifelse(spec == "no", "NO / pptv", "NO<sub>2</sub> / pptv")
-    ) |> 
+  ) |> 
   st_join(regions) |> 
   filter(!lod_flag,
          !is.na(region),
@@ -570,7 +591,7 @@ g_nox_density = altFilteredNOx |>
   scale_y_continuous(name = "", breaks = NULL)+
   scale_fill_manual(values = c("darkblue", "darkgreen", "darkred"),
                     name = "Altitude (nearest 1000) / m"
-                    )+
+  )+
   facet_grid(spec ~ region)+
   theme_minimal()+
   theme(
@@ -586,15 +607,241 @@ For quick examination, plotted below are the densities of NO and NO<sub>2</sub> 
 print(g_nox_density)
 ```
 
-## Ozone
+## Stratospheric Intrusion - Evidence from O~3~, CH~4~, and RH
 
+```{r}
+
+stratPlotDat = dat |> 
+  select(date, flightNumber, ALT_GIN, O3_TECO, RH_LIQ, ch4_drymole, no_mr, no2_mr) |> 
+  mutate(nox_mr = no_mr+no2_mr) |> 
+  select(-no_mr, -no2_mr) |> 
+  filter(ALT_GIN > 6000) |> 
+  pivot_longer(-c(date, flightNumber)) |> 
+  mutate(date = as_datetime(date, tz = "UTC")) |>
+  group_by(flightNumber) |> 
+  mutate(flight_start = min(date),
+         date2 = as.numeric(date-flight_start)
+  ) |> 
+  ungroup() |> 
+  mutate(
+    name = case_when(
+      name == "ALT_GIN" ~ "Altitude / m",
+      name == "O3_TECO" ~ "O<sub>3</sub> / ppbv",
+      name == "ch4_drymole" ~ "CH<sub>4</sub> / ppbv",
+      name == "RH_LIQ" ~ "Relative Humidity / %",
+      name == "nox_mr" ~ "NO<sub>x</sub> / pptv"
+    )
+  )
+
+flights = unique(stratPlotDat$flightNumber)
+
+stratPlotList = list()
+
+for(i in 1:length(flights)){
+  
+  stratPlotList[[flights[i]]] = stratPlotDat |>
+    filter(flightNumber == flights[i]) |> 
+    ggplot()+
+    geom_line(aes(date2, value, colour = name))+
+    scale_y_continuous(name = "")+
+    scale_x_continuous(name = "Flight Time / s")+
+    scale_colour_brewer(palette = "Set1", name = "")+
+    facet_wrap(~name, ncol= 1, scales = "free_y")+
+    theme_minimal()+
+    theme(
+      axis.title = element_markdown(),
+      strip.text = element_markdown()
+    ) 
+  
+  stratPlotList[[flights[i]]] = ggplotly(stratPlotList[[flights[i]]], dynamicTicks = T)
+  
+}
+
+
+```
+
+Particularly in flights during the first week, (C409 - C413), there are periods where the aircraft flew through areas of stratospheric intrusion into the free troposphere. These are indicated by periods of elevated O~3~ and suppressed CH~4~ and RH. As a broad filter, periods where O~3~ > 300 ppbv and RH < 20 % helps identify these. During these CH~4~ tends to be < 1900 ppbv, though this threshold is less clear cut (see C409 and C410). 
+
+The below plots show these parameters as well at altitude and NO~x~ across all flights. C413 provides an excellent example of clear flight in the stratosphere, with the entire 1000 m leg meeting the above criteria, and the transition from free troposphere being evident as the aircraft changes height from 9000 m. Periods of the flight < 6000 m have been removed. 
+
+::: panel-tabset
+```{r, results='asis'}
+
+map2(stratPlotList, toupper(names(stratPlotList)),
+     \(x, y) knitr::knit_child(
+       text = c(paste0("## ",y),"```{r, fig.height=8}","x","```"),
+       envir = environment(), 
+       quiet = TRUE
+     )
+) |> 
+  unlist() |> 
+  cat(sep = "\n")
+
+```
+:::
 
 ## Particles
 
+### AMS
+
+```{r}
+amsPlotDat = dat |> 
+  select(date, flightNumber, ALT_GIN, nh4, no3, org, so4) |> 
+  pivot_longer(-c(date, flightNumber)) |> 
+  mutate(date = as_datetime(date, tz = "UTC")) |>
+  group_by(flightNumber) |> 
+  mutate(flight_start = min(date),
+         date2 = as.numeric(date-flight_start)
+  ) |> 
+  ungroup() |> 
+  mutate(
+    name = case_when(
+      name == "ALT_GIN" ~ "Altitude / m",
+      name == "nh4" ~ "NH<sub>4</sub> / &mu;g m<sup>-3</sup>",
+      name == "no3" ~ "NO<sub>3</sub> / &mu;g m<sup>-3</sup>",
+      name == "org" ~ "Organic / &mu;g m<sup>-3</sup>",
+      name == "so4" ~ "SO<sub>4</sub> / &mu;g m<sup>-3</sup>"
+    )
+  )
+
+flights = amsPlotDat |> 
+  filter(
+    name != "Altitude / m",
+    !is.na(value)
+  ) |> 
+  pull(flightNumber) |> 
+  unique()
+
+amsPlotList = list()
+
+for(i in 1:length(flights)){
+  
+  amsPlotList[[flights[i]]] = amsPlotDat |>
+    filter(flightNumber == flights[i]) |> 
+    ggplot()+
+    geom_point(aes(date2, value, colour = name))+
+    scale_y_continuous(name = "")+
+    scale_x_continuous(name = "Flight Time / s")+
+    scale_colour_brewer(palette = "Set1", name = "")+
+    facet_wrap(~name, ncol= 1, scales = "free_y")+
+    theme_minimal()+
+    theme(
+      axis.title = element_markdown(),
+      strip.text = element_markdown()
+    ) 
+  
+  amsPlotList[[flights[i]]] = ggplotly(amsPlotList[[flights[i]]], dynamicTicks = T)
+  
+}
+
+
+```
+
+::: panel-tabset
+```{r, results='asis'}
+
+map2(amsPlotList, toupper(names(amsPlotList)),
+     \(x, y) knitr::knit_child(
+       text = c(paste0("## ",y),"```{r, fig.height=8}","x","```"),
+       envir = environment(), 
+       quiet = TRUE
+     )
+) |> 
+  unlist() |> 
+  cat(sep = "\n")
+
+```
+:::
+
+### SP2
+
+```{r}
+sp2PlotDat = dat |> 
+  select(date, flightNumber, ALT_GIN, mass_bc_ugm3, n_bc) |> 
+  pivot_longer(-c(date, flightNumber)) |> 
+  mutate(date = as_datetime(date, tz = "UTC")) |>
+  group_by(flightNumber) |> 
+  mutate(flight_start = min(date),
+         date2 = as.numeric(date-flight_start)
+  ) |> 
+  ungroup() |> 
+  mutate(
+    name = case_when(
+      name == "ALT_GIN" ~ "Altitude / m",
+      name == "mass_bc_ugm3" ~ "Black Carbon Mass / &mu;g m<sup>-3</sup>",
+      name == "n_bc" ~ "Black Carbon Number / cm<sup>-3</sup>"
+    )
+  )
+
+flights = sp2PlotDat |> 
+  filter(
+    name != "Altitude / m",
+    !is.na(value)
+  ) |> 
+  pull(flightNumber) |> 
+  unique()
+
+sp2PlotList = list()
+
+for(i in 1:length(flights)){
+  
+  sp2PlotList[[flights[i]]] = sp2PlotDat |>
+    filter(flightNumber == flights[i]) |> 
+    ggplot()+
+    geom_point(aes(date2, value, colour = name))+
+    scale_y_continuous(name = "")+
+    scale_x_continuous(name = "Flight Time / s")+
+    scale_colour_brewer(palette = "Set1", name = "")+
+    facet_wrap(~name, ncol= 1, scales = "free_y")+
+    theme_minimal()+
+    theme(
+      axis.title = element_markdown(),
+      strip.text = element_markdown()
+    ) 
+  
+  sp2PlotList[[flights[i]]] = ggplotly(sp2PlotList[[flights[i]]], dynamicTicks = T)
+  
+}
+
+
+```
+
+::: panel-tabset
+```{r, results='asis'}
+
+map2(sp2PlotList, toupper(names(sp2PlotList)),
+     \(x, y) knitr::knit_child(
+       text = c(paste0("## ",y),"```{r, fig.height=8}","x","```"),
+       envir = environment(), 
+       quiet = TRUE
+     )
+) |> 
+  unlist() |> 
+  cat(sep = "\n")
+
+```
+:::
 
 ## Whole Air Samples
 
+```{r}
 
+p1 = datSwas |> 
+  filter(type == "voc") |> 
+  pivot_wider() |> 
+  group_by(flightNumber) |> 
+  mutate(swas_bottle = row_number()) |> 
+  pivot_longer(-c(start_sample_date_time, stop_sample_date_time, comments, flightNumber, swas_case, swas_bottle, gc_date_time, type)) |> 
+  ggplot()+
+  geom_bar(aes(x = swas_bottle, y = value, fill = name), stat = "identity")+
+  facet_wrap(~flightNumber)+
+  guides(fill = "none")+
+  theme_minimal()
+
+plotly::ggplotly(p1)
+
+
+```
 
 
 

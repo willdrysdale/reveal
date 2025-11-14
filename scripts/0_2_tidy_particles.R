@@ -73,7 +73,10 @@ datAMS = files |>
     by = join_by(between(date, startDate, endDate))        
   ) |> 
   filter(!is.na(flightNumber)) |> 
-  select(date, flightNumber, chl, nh4, no3, org, so4)
+  select(date, flightNumber, chl, nh4, no3, org, so4) |> 
+  mutate(date = nanotime::nano_floor(date, nanotime::as.nanoduration("00:00:10"))) |> 
+  group_by(date, flightNumber) |> 
+  summarise_all(mean, na.rm = T)
 
 saveRDS(datAMS, here::here(dirOut, "AMS.RDS"))
   
@@ -105,7 +108,10 @@ datSP2 = files |>
     by = join_by(between(date, startDate, endDate))        
   ) |> 
   filter(!is.na(flightNumber)) |> 
-  select(date, flightNumber, mass_bc_ugm3, n_bc)
+  select(date, flightNumber, mass_bc_ugm3, n_bc) |> 
+  mutate(date = nanotime::nano_floor(date, nanotime::as.nanoduration("00:00:10"))) |> 
+  group_by(date, flightNumber) |> 
+  summarise_all(mean, na.rm = T)
 
 saveRDS(datSP2, here::here(dirOut, "SP2.RDS"))
 

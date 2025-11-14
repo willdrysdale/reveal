@@ -17,19 +17,33 @@ coreDat = mirai({
     dplyr::filter(fileType == "core.nc") |> 
     dplyr::rowwise() |> 
     dplyr::mutate(
-      data = faamr::read_faam_core(
+      data32 = faamr::read_faam_core(
         filePath, 
         startDate = startDate, 
         endDate = endDate,
         selectVar = c("LAT_GIN", "LON_GIN", "ALT_GIN"),
-        sps = 32,
+        dimensionName = "sps32",
         averageNanoString = "00:00:10"
       ) |> 
-        list()) |> 
+        tidyr::pivot_wider() |> 
+        dplyr::select(-seconds_since_midnight) |> 
+        list(),
+      dataTime = faamr::read_faam_core(
+        filePath, 
+        startDate = startDate, 
+        endDate = endDate,
+        selectVar = c("O3_TECO", "RH_LIQ"), 
+        dimensionName = "Time",
+        averageNanoString = "00:00:10"
+      ) |>
+        tidyr::pivot_wider() |> 
+        dplyr::select(-seconds_since_midnight) |> 
+        list(),
+      data = dplyr::left_join(data32, dataTime, by = "date") |>
+        list()
+    ) |> 
     dplyr::select(flightNumber, data) |> 
-    tidyr::unnest(data) |> 
-    tidyr::pivot_wider() |> 
-    dplyr::select(-seconds_since_midnight)
+    tidyr::unnest(data) 
 },
 flightFiles = flightFiles)
 
@@ -119,7 +133,7 @@ sp2Dat = readRDS(here::here('data','particles_non_ceda','tidy','SP2.RDS'))
 # Resolve Async -----------------------------------------------------------
 
 waiting = TRUE
-cli::cli_progress_bar(format = "{cli::pb_spin} Waiting for Data Read. Elapses: {cli::pb_elapsed}")
+cli::cli_progress_bar(format = "{cli::pb_spin} Waiting for Data Read. Elapsed: {cli::pb_elapsed}")
 while(waiting){
   cli::cli_progress_update()
   Sys.sleep(1)
@@ -149,9 +163,9 @@ while(waiting){
 
 # Merge -------------------------------------------------------------------
 
-dat = list(coreDat,
-           nitrateDat,
-           fggaDat,
+dat = list(coreDat[],
+           nitrateDat[],
+           fggaDat[],
            amsDat,
            sp2Dat
 ) |> 
@@ -165,7 +179,20 @@ write.csv(dat, here::here('data','faam_merge','reveal_merge.csv'))
 
 swasFiles = list.files(here::here('data','was'), full.names = T)
 
-datSwas = map_df(swasFiles, read_york_gc_fid_lab) |> 
+datSwas = map_df(swasFiles, read_york_gc_fid_lab) |>  
+  pivot_longer(-c(start_sample_date_time, stop_sample_date_time, comments, flight, swas_case, swas_bottle, gc_date_time)) |> 
+  mutate(
+    species = name |> 
+      stringr::str_remove("_ppb_v") |> 
+      stringr::str_remove("_uncertainty") |> 
+      stringr::str_remove("_flag"),
+    name = stringr::str_remove(name, paste0(species, "_"))
+  ) |> 
+  pivot_wider() |> 
+  rename(value = ppb_v) |> 
+  filter(flag == 0) |> 
+  select(-uncertainty_ppb_v, -flag) |> 
+  pivot_wider(names_from = "species") |>  
   nest_join(dat, 
             by = join_by(between(y$date, x$start_sample_date_time, x$stop_sample_date_time))) |> 
   rowwise() |> 
@@ -175,7 +202,8 @@ datSwas = map_df(swasFiles, read_york_gc_fid_lab) |>
          flight = tolower(flight)
   ) |> 
   rename(flightNumber = flight) |> 
-  unnest(dat)
+  unnest(dat) |> 
+  select(-any_of(c("date","ALT_GIN", "LAT_GIN", "LON_GIN", "RH_LIQ", "no_u", "no2_u", "no_lod", "no2_lod", "co2_flag", "ch4_flag", "ch4_bias", "ch4_uncert", "co2_bias", "co2_uncert")))
 
 saveRDS(datSwas, here::here('data','faam_merge','swasMerge.RDS'))
 write.csv(datSwas, here::here('data','faam_merge','swas_merge.csv'))

@@ -1,0 +1,611 @@
+---
+title: "REVEAL-NOx Flight Summaries"
+theme:
+  light: cosmo
+  dark: solar
+format: 
+  html:
+    toc: true
+    respect-user-color-scheme: true
+    css:
+      - https://cdn.knightlab.com/libs/juxtapose/latest/css/juxtapose.css
+      - custom.css
+echo: false
+warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{ojs}
+//| output: false
+require("https://cdn.jsdelivr.net/npm/juxtaposejs@1.1.6/build/js/juxtapose.min.js")
+.catch(() => null)
+
+```
+
+```{r, include = FALSE}
+
+library(sf)
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(faamr)
+library(plotly)
+library(ggtext)
+library(leaflet)
+library(ggplot2)
+library(nanotime)
+library(lubridate)
+
+if(!dir.exists(here::here('flight_summary','plots'))){
+  dir.create(here::here('flight_summary','plots'))
+}
+
+regions = tribble(
+  ~lat, ~lon, ~region,
+  55.90, -2.17, "Transect Coast",
+  55.90, -2.51, "Transect Coast",
+  57.10, -2.51, "Transect Coast",
+  57.10, -1.73, "Transect Coast",
+  56.00, -1.73, "Transect Coast",
+  54.00, -0.50, "Transect Coast",
+  53.50, -0.50, "Transect Coast",
+  55.00, -1.95, "Transect Coast",
+  55.90, -2.17, "Transect Coast",
+  55.80, -2.20, "Transect Land",
+  55.80, -2.17, "Transect Land",
+  54.70, -1.95, "Transect Land",
+  51.80, -1.95, "Transect Land",
+  51.80, -2.01, "Transect Land",
+  54.50, -2.01, "Transect Land",
+  55.80, -2.25, "Transect Land",
+  55.80, -2.20, "Transect Land",
+  53.46,  0.66, "L602",
+  53.21,  2.61, "L602",
+  53.19,  2.61, "L602",
+  53.30,  1.50, "L602",
+  53.43,  0.66, "L602",
+  53.46,  0.66, "L602",
+  52.98,  1.05, "L603",
+  52.90,  1.80, "L603",
+  52.82,  2.40, "L603",
+  52.80,  2.40, "L603",
+  52.96,  1.05, "L603",
+  52.98,  1.05, "L603"
+) |> 
+  st_as_sf(coords = c("lon", "lat"), crs = "WGS84") |> 
+  group_by(region) |> 
+  summarise(do_union = FALSE) |> 
+  st_cast("POLYGON") 
+
+
+lim = tibble(
+  lat = c(49,60),
+  lon = c(-12, 2.5)
+) |> 
+  st_as_sf(coords = c("lon", "lat"), crs = "WGS84")
+
+dat = readRDS(here::here('data','faam_merge','merge.RDS')) |> 
+  filter(flightNumber != "c392") |>  # remove test flight
+  mutate(
+    alt_flag = case_when(
+      between(ALT_GIN, 9000, 9400) ~ 1,
+      between(ALT_GIN, 9400, 9600) ~ 2,
+      ALT_GIN > 10000 ~ 3, 
+      TRUE ~ 0
+    ),
+    alt_rate = abs(ALT_GIN-lag(ALT_GIN,2)) < 20
+  )
+
+datSwas = readRDS(here::here('data','faam_merge','swasMerge.RDS'))
+
+datSf = dat |> 
+  st_as_sf(coords = c("LON_GIN", "LAT_GIN"), crs = "WGS84") |> 
+  mutate(ALT_GIN_BIN = ALT_GIN - ALT_GIN %% 200) |> 
+  st_join(regions)
+
+flightFiles = list_flight_data_local(here::here('data','faam_raw')) |> 
+  mutate(r = faamr:::file_revision(basename(filePath))) |> 
+  group_by(flightNumber, fileType) |> 
+  filter(r == max(r)) |> 
+  ungroup() |> 
+  nest_by(flightNumber) |> 
+  mutate(corePath = data |> 
+           filter(fileType == "core.nc") |> 
+           pull(filePath),
+         wow = map2(corePath,flightNumber, 
+                    \(x,y) get_weight_off_wheels(x) |> 
+                      summarise(startDate = min(date),
+                                endDate = max(date))
+         )) |> 
+  unnest(wow) |> 
+  unnest(data) |> 
+  select(-corePath)
+
+
+nitrate_c409_10hz = flightFiles |> 
+  filter(fileType == "core-nitrates.nc",
+         flightNumber == "c409") |> 
+  mutate(
+    data = read_faam_nitrates(
+      filePath, 
+      startDate = "2025-06-03T09:51:40+00:00", 
+      endDate = "2025-06-03T11:23:20+00:00",
+      averageNanoString = "00:00:00.1",
+      allowReducedQuality = TRUE,
+      allowSuspect = TRUE
+    ) |> 
+      list()
+  ) |> 
+  select(flightNumber, data) |> 
+  unnest(data)
+
+```
+
+```{r, include = FALSE}
+png(here::here('flight_summary','plots','psuedo-log.png'))
+
+ggplot(data.frame(x = seq(-100, 100, 1)), aes(x))+
+  geom_function(fun = scales::transform_log10()$transform, aes(colour = "log<sub>10</sub>"))+
+  geom_function(fun = scales::transform_pseudo_log(sigma = 1, base = 10)$transform, aes(colour = "pseudo-log<sub>10</sub>"))+
+  scale_x_continuous(name = "Input")+
+  scale_y_continuous(name = "Output")+
+  scale_colour_manual(values = c("red","black"), name = "")+
+  ggtitle("Transformer: pseudo-log<sub>10</sub> vs log<sub>10</sub>")+
+  theme_minimal()+
+  theme(
+    title = element_markdown(),
+    legend.text = element_markdown()
+  )
+
+dev.off()
+```
+
+### REducing aViation Emissions' uncertAin cLimate impacts: NOx
+
+> “The chain of events from emissions of NOx to impacts on climate are complex and uncertain. Are these aviation NOx emissions responsible for a lot or a little warming or cooling? In this project we aim to constrain the uncertainty we have on these climate impacts by constraining the performance of models in representing the chemical cascades from aviation NOx emissions" - Professor Alex Archibald, speaking to [NCAS Comms](https://ncas.ac.uk/research-aircraft-measures-climate-important-nox-emissions-from-commercial-flights/)
+
+Eight flights aboard the [FAAM aircraft](https://www.faam.ac.uk/) were conducted in June 2025 (C409 - C418) following roughly the same flight plan, either clockwise or counter-clockwise.
+
+The counter-clockwise case:
+
+1.  Take off, heading east and climb to flight level 300
+2.  Fly a circuit of off the East of England, following flight lanes **L603** and **L602**
+3.  Turn north and fly towards Aberdeen along the east coast of the UK (**Transect Coast**)
+4.  Just south of Aberdeen, turn south and ascend to flight level 340
+5.  Fly due south, roughly tracing the 2° west line of longitude until south of Birmingham (**Transect Land**)
+6.  Recover to Cranfield
+
+All flights were flown as doubles, with the direction reversing in the afternoon, such that the circuit and 2° W transect were flown at both FL300 and FL340 each day. Flight tracks can be viewed below, coloured by altitude or region, for the latter only level runs above 9000 m are shown.
+
+::: {.panel-tabset}
+
+## Altitude
+
+```{r}
+
+rleIndex = datSf |> 
+  pull(ALT_GIN_BIN) |> 
+  rle() |> 
+  wsdmiscr2::tidy_rle() |> 
+  wsdmiscr2::index_from_tidy_rle()
+
+flightPaths = datSf |> 
+  mutate(idx = row_number()) |> 
+  left_join(rleIndex, "idx") |> 
+  group_by(flightNumber, ALT_GIN_BIN, id) |> 
+  summarise(do_union = FALSE) |> 
+  st_cast("LINESTRING")
+
+col = tibble(ALT_GIN_BIN = seq(0, max(flightPaths$ALT_GIN_BIN), 200)) |> 
+  mutate(hex = viridisLite::viridis(max(row_number())))
+
+plotDat = flightPaths |> 
+  ungroup() |> 
+  left_join(col, "ALT_GIN_BIN")
+
+flights = unique(plotDat$flightNumber)
+
+map = leaflet() |> 
+  addTiles()
+
+for(i in 1:length(flights)){
+  map = map |> 
+    addPolylines(
+      data = filter(plotDat, flightNumber == flights[i]),
+      group = flights[i],
+      color = ~hex,
+      opacity = 0.8
+    )
+}
+
+map = map |> 
+  addLayersControl(
+    baseGroups = flights,
+    options = layersControlOptions(
+      collapsed = FALSE
+    )
+  ) 
+
+map
+
+
+```
+
+## Region
+
+```{r}
+
+flightPathsRegion = datSf |> 
+  filter(!is.na(region)) |> 
+  group_by(flightNumber, region) |> 
+  summarise(do_union = FALSE) |> 
+  st_cast("LINESTRING")
+
+regionNames = unique(flightPathsRegion$region)
+
+col = tibble(region = regionNames,
+             hex = RColorBrewer::brewer.pal(length(regionNames), "Set1"))
+
+plotDatRegion = flightPathsRegion |> 
+  ungroup() |> 
+  left_join(col, "region")
+
+flights = unique(plotDatRegion$flightNumber)
+
+mapRegion = leaflet() |> 
+  addTiles()
+
+for(i in 1:length(flights)){
+  for(j in 1:length(regionNames)){
+    mapRegion = mapRegion |> 
+      addPolylines(
+        data = filter(plotDatRegion, flightNumber == flights[i], region == regionNames[j]),
+        label = regionNames[j],
+        group = flights[i],
+        color = ~hex,
+        opacity = 0.8
+      )
+  }
+}
+
+mapRegion = mapRegion |> 
+  addLayersControl(
+    baseGroups = flights,
+    options = layersControlOptions(
+      collapsed = FALSE
+    )
+  ) 
+
+mapRegion
+
+```
+
+:::
+
+------------------------------------------------------------------------
+
+## Overview
+
+```{r, include = FALSE}
+
+overviewPlotDat = dat |> 
+  select(date, flightNumber, ALT_GIN, no_mr, no2_mr, co2_drymole) |> 
+  mutate(date = as_datetime(date, tz = "UTC")) |>
+  group_by(flightNumber) |> 
+  mutate(flight_start = min(date),
+         date2 = as.numeric(date-flight_start)
+  ) |> 
+  ungroup() |> 
+  select(-date, -flight_start) |> 
+  pivot_longer(-c(date2,flightNumber)) |> 
+  mutate(
+    name = case_when(
+      name == "ALT_GIN" ~ "Altitude / m",
+      name == "co2_drymole" ~ "CO<sub>2</sub> / ppmv",
+      name == "no_mr" ~ "NO / pptv",
+      name == "no2_mr" ~ "NO<sub>2</sub> / pptv"
+    )
+  )
+
+overviewPlotList = list()
+
+flights = unique(overviewPlotDat$flightNumber)
+
+
+for(i in 1:length(flights)){
+  
+  overviewPlotList[[flights[i]]] = overviewPlotDat |>
+    filter(flightNumber == flights[i]) |> 
+    ggplot()+
+    geom_line(aes(date2, value, colour = name))+
+    scale_y_continuous(name = "")+
+    scale_x_continuous(name = "Flight Time / s")+
+    scale_colour_brewer(palette = "Set1", name = "")+
+    facet_wrap(~name, ncol= 1, scales = "free_y")+
+    theme_minimal()+
+    theme(
+      axis.title = element_markdown(),
+      strip.text = element_markdown()
+    ) 
+  
+  overviewPlotList[[flights[i]]] = ggplotly(overviewPlotList[[flights[i]]], dynamicTicks = T)
+  
+}
+
+```
+
+::: panel-tabset
+```{r, results='asis'}
+
+map2(overviewPlotList, toupper(names(overviewPlotList)),
+     \(x, y) knitr::knit_child(
+       text = c(paste0("## ",y),"```{r, fig.height=7}","x","```"),
+       envir = environment(), 
+       quiet = TRUE
+     )
+) |> 
+  unlist() |> 
+  cat(sep = "\n")
+
+```
+:::
+
+```{r, include = F}
+logbreaks = c(-10^c(1:2),0,10^c(1:5))
+
+nitratePlotDat_10Hz = nitrate_c409_10hz |> 
+  pivot_wider() |>
+  select(-date, -contains("flag")) |> 
+  pivot_longer(-c(flightNumber, seconds_since_midnight),names_sep = "_", names_to = c("spec", "type")) |> 
+  pivot_wider(names_from = type) |> 
+  filter(between(seconds_since_midnight, 35500, 36000) | between(seconds_since_midnight, 40500, 41000)) |> 
+  mutate(
+    part = case_when(
+      seconds_since_midnight <= 36000 ~ "A",
+      seconds_since_midnight <= 41000 ~ "B"
+    ),
+    seconds_since_midnight = case_when(
+      seconds_since_midnight < 36000 ~ seconds_since_midnight-35500,
+      between(seconds_since_midnight,40500, 41000) ~ seconds_since_midnight-40500
+    ),
+    lod_flag = (mr-u)<lod) |>
+  filter(seconds_since_midnight > 0) |> 
+  mutate(spec = ifelse(spec == "no", "NO / pptv", "NO<sub>2</sub> / pptv"))
+
+nitratePlotDat = dat |> 
+  select(flightNumber, date, no_mr, no2_mr, no_u, no2_u, no_lod, no2_lod) |> 
+  pivot_longer(-c(flightNumber, date),names_sep = "_", names_to = c("spec", "type")) |> 
+  pivot_wider(names_from = type) |> 
+  mutate(date = as_datetime(date, tz = "UTC"),
+         spec = ifelse(spec == "no", "NO / pptv", "NO<sub>2</sub> / pptv"),
+         lod_flag = (mr - u) < lod) 
+
+nitratePlotDat_1hz = nitratePlotDat |>
+  filter(flightNumber == "c409") |>
+  mutate(seconds_since_midnight = as.numeric(date) - as.numeric(floor_date(date, "1 day"))) |>
+  filter(
+    between(seconds_since_midnight, 35500, 36000) |
+      between(seconds_since_midnight, 40500, 41000)
+  ) |>
+  mutate(
+    part = case_when(
+      seconds_since_midnight <= 36000 ~ "A",
+      seconds_since_midnight <= 41000 ~ "B"
+    ),
+    seconds_since_midnight = case_when(
+      seconds_since_midnight < 36000 ~ seconds_since_midnight - 35500,
+      between(seconds_since_midnight,40500, 41000) ~ seconds_since_midnight - 40500
+    ),
+    lod_flag = (mr - u) < lod
+  ) |>
+  filter(seconds_since_midnight > 0,
+         !is.na(lod_flag))
+
+
+```
+
+```{r, include = F}
+g_nitrate_10 = nitratePlotDat_10Hz |> 
+  filter(!is.na(lod_flag)) |> 
+  ggplot()+
+  geom_errorbar(aes(seconds_since_midnight, ymin = mr-u, ymax = mr+u))+
+  geom_point(aes(seconds_since_midnight, mr, colour = lod_flag))+
+  geom_line(aes(seconds_since_midnight, lod), colour = "black")+
+  scale_colour_manual(values = c("green4", "#D9544D"), name = "LOD Flag")+
+  scale_y_continuous(
+    trans = scales::pseudo_log_trans(base = 10,sigma = 1),
+    breaks = logbreaks,
+    name = "",
+    limits = c(-500, 1500))+
+  scale_x_continuous("Duration / s", limits = c(0,500))+
+  facet_grid(spec~part, scale = "free", switch = "y")+
+  theme_minimal()+
+  theme(
+    strip.placement = "outside",
+    strip.text = element_markdown())
+
+png(here::here('flight_summary','plots','nitrate_10.png'), res = 300, width = 3000, height = 2250)
+print(g_nitrate_10)
+dev.off()
+
+g_nitrate_1 = nitratePlotDat_1hz |> 
+  filter(!is.na(lod_flag)) |>
+  ggplot() +
+  geom_errorbar(
+    aes(seconds_since_midnight, ymin = mr - u, ymax = mr + u)
+  ) +
+  geom_point(
+    aes(seconds_since_midnight, mr, colour = lod_flag)
+  ) +
+  geom_line(
+    aes(seconds_since_midnight, lod), colour = "black") +
+  scale_y_continuous(
+    trans = scales::pseudo_log_trans(base = 10, sigma = 1),
+    breaks = logbreaks,
+    name = "",
+    limits = c(-500, 1500)) +
+  scale_x_continuous("Duration / s", limits = c(0,500))+
+  scale_colour_manual(values = c("green4", "#D9544D"), name = "LOD Flag")+
+  facet_grid(spec ~ part, scale = "free",switch = "y") +
+  theme_minimal()+
+  theme(
+    strip.placement = "outside",
+    strip.text = element_markdown())
+
+png(here::here('flight_summary','plots','nitrate_1.png'), res = 300, width = 3000, height = 2250)
+print(g_nitrate_1)
+dev.off()
+
+```
+
+## NO<sub>x</sub> processing details
+
+### Data + Cleaning
+
+-   All data was used, including those flagged `Reduced Quality` or `Suspect` due to the lack of clear definition of these terms
+-   Apply 10<sup>-6</sup> - 10<sup>6</sup> pptv threshold for spike removal
+
+### The Limit of Detection (LOD)
+
+-   The 10 Hz NO<sub>x</sub> data is often close the the limit of detection, especially when the uncertainty is considered
+-   Time averaging improves this, here we average to 10 s, reducing the uncertainty $\sqrt{\frac{\sum{u^2}}{N}}$ and LOD by $\sqrt{\frac{\sum{LOD}}{N}}$
+
+The below plot demonstrates this on two 500 s periods taken from C409, data are red when the mixing ratio - uncertainty are less that the LOD (shown as a black line). The y-axis is pseudo-log<sub>10</sub> [^1].
+
+Move the slider to switch between the 10 Hz and 10 s data.
+
+::: {.juxtapose data-startingposition="80%" style="margin-bottom:2em"}
+![](plots/nitrate_10.png) ![](plots/nitrate_1.png)
+:::
+
+Data recovery is much improved when treating the LOD in this fashion. The below plots shows 10 s data for all flights
+
+```{r}
+
+nitrateList = list()
+
+flights = unique(nitratePlotDat$flightNumber)
+
+
+for(i in 1:length(flights)){
+  
+  nitrateList[[flights[i]]] = nitratePlotDat |> 
+    filter(flightNumber == flights[i]) |> 
+    ggplot()+
+    geom_errorbar(aes(date, ymin = mr-u, ymax = mr+u))+
+    geom_point(aes(date, mr, colour = lod_flag))+
+    geom_line(aes(date, lod), colour = "black")+
+    scale_colour_manual(values = c("green4", "#D9544D"), name = "LOD Flag")+
+    scale_y_continuous(
+      trans = scales::pseudo_log_trans(base = 10,sigma = 1),
+      breaks = logbreaks,
+      name = "")+
+    facet_wrap(~spec, ncol = 1)+
+    theme_minimal()+
+    theme(
+      strip.placement = "outside",
+      strip.text = element_markdown())
+  
+  nitrateList[[flights[i]]] = ggplotly(nitrateList[[flights[i]]], dynamicTicks = T)
+  
+}
+
+```
+
+::: panel-tabset
+```{r, results='asis'}
+
+map2(nitrateList, toupper(names(overviewPlotList)),
+     \(x, y) knitr::knit_child(
+       text = c(paste0("## ",y),"```{r, fig.height=7}","x","```"),
+       envir = environment(), 
+       quiet = TRUE
+     )
+) |> 
+  unlist() |> 
+  cat(sep = "\n")
+
+```
+:::
+
+### Data by Region and Altitude
+
+```{r, include = FALSE}
+
+altFilteredNOx = datSf |> 
+  select(date, flightNumber, ALT_GIN, contains("no"), contains("no2"), alt_rate, geometry) |> 
+  pivot_longer(-c(date, flightNumber, ALT_GIN, alt_rate, geometry), names_to = c("spec", "stat"), names_sep = "_") |> 
+  pivot_wider(names_from = "stat") |> 
+  mutate(
+    lod_flag = (mr - u) < lod,
+    alt_flag = ALT_GIN < 10000,
+    spec = ifelse(spec == "no", "NO / pptv", "NO<sub>2</sub> / pptv")
+    ) |> 
+  st_join(regions) |> 
+  filter(!lod_flag,
+         !is.na(region),
+         !is.na(mr),
+         alt_rate,
+         ALT_GIN > 8000)
+
+png(here::here('flight_summary','plots','alt-plot.png'))
+altFilteredNOx |> 
+  group_by(flightNumber) |> 
+  mutate(
+    date = date |> 
+      as_datetime(tz = "UTC") |> 
+      as.numeric(),
+    duration = date-min(date)) |> 
+  ggplot()+
+  geom_point(aes(duration, ALT_GIN, colour = toupper(flightNumber)))+
+  scale_y_continuous(name = "Altitude / m")+
+  scale_x_continuous(name = "Duration / s")+
+  scale_colour_discrete(name = "")+
+  facet_wrap(~region)+
+  theme_minimal()
+dev.off()
+
+g_nox_density = altFilteredNOx |> 
+  mutate(ALT_GIN = round(ALT_GIN, -3)) |> 
+  ggplot()+
+  geom_density(aes(mr, fill = factor(ALT_GIN)), alpha = 0.5)+
+  scale_x_continuous(trans = "log10", name = "Mixing Ratio / pptv")+
+  scale_y_continuous(name = "", breaks = NULL)+
+  scale_fill_manual(values = c("darkblue", "darkgreen", "darkred"),
+                    name = "Altitude (nearest 1000) / m"
+                    )+
+  facet_grid(spec ~ region)+
+  theme_minimal()+
+  theme(
+    strip.text = element_markdown(),
+    legend.position = "bottom"
+  )
+
+```
+
+For quick examination, plotted below are the densities of NO and NO<sub>2</sub> mixing across all of the REVEAL flights after the processing described above. Altitude has been rounded to the nearest 1000 m as a rough grouping. Enhanced NO<sub>x</sub> is generally seen as altitude increases, and this is consistent with the expectation that FL300 was not quite high enough to see the effects of the jetways. The non-rounded altitude data is shown in the footnotes [^2].
+
+```{r}
+print(g_nox_density)
+```
+
+## Ozone
+
+
+## Particles
+
+
+## Whole Air Samples
+
+
+
+
+
+[^1]: The psuedo-log transformer:\
+![](plots/psuedo-log.png)
+\
+
+
+[^2]: Altitude profiles for all flights that are above 9000 m and in a defined 'region':
+![](plots/alt-plot.png)

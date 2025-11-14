@@ -84,12 +84,30 @@ create_smps_binOut_from_lower_bounds = function(bin_lower, applyLog10 = TRUE){
     dplyr::filter(!is.na(diameter_end))
 }
 
+create_smps_binOut_from_centres = function(bin_centre, applyLog10 = TRUE){
+  
+  if(applyLog10){
+    bin_centre = log10(bin_centre)
+  }
+  
+  
+  internalBinShoulders = bin_centre[1:(length(bin_centre)-1)]+(diff(bin_centre)/2)
+  
+  data.frame(
+    diameter_start = c(0, internalBinShoulders),
+    diameter_end = c(internalBinShoulders, max(bin_centre)*2)
+  ) 
+  
+}
+
+
+
 read_smps = function(filepath, binOut = NULL){
   
   smpsList = read_smps_arrays(filepath)
   
   if(is.null(binOut)){
-    binOut = create_smps_binOut_from_lower_bounds(
+    binOut = create_smps_binOut_from_centres(
       smpsList$d[1,]
     )
   }

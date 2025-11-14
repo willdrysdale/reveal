@@ -14,13 +14,18 @@ flight_details = function(){
 }
 
 flight_files = function(){
-  flightFiles = list_flight_data_local(here::here('data','faam_raw')) |> 
+  flightFiles = faamr::list_flight_data_local(here::here('data','faam_raw'), skipFlightListCheck = T) |>
+    mutate(r = faamr:::file_revision(basename(filePath))) |> 
+    group_by(flightNumber, fileType) |> 
+    filter(r == max(r)) |> 
+    ungroup() |> 
+    select(-r) |> 
     nest_by(flightNumber) |> 
     mutate(corePath = data |> 
              filter(fileType == "core.nc") |> 
              pull(filePath),
            wow = map2(corePath,flightNumber, 
-                      \(x,y) get_weight_off_wheels(x) |> 
+                      \(x,y) faamr::get_weight_off_wheels(x) |> 
                         summarise(startDate = min(date),
                                   endDate = max(date))
            )) |> 
