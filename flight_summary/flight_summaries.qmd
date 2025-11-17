@@ -10,6 +10,7 @@ theme:
   dark: solar
 format: 
   html:
+    output-file: index
     code-links:
       - text: Github Repo
         href: https://github.com/willdrysdale/reveal
