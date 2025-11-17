@@ -172,8 +172,8 @@ dat = list(coreDat[],
   reduce(left_join, by = c("flightNumber", "date")) |> 
   ungroup()
 
-saveRDS(dat, here::here('data','faam_merge','merge.RDS'))
-write.csv(dat, here::here('data','faam_merge','reveal_merge.csv'))
+saveRDS(dat, here::here('data_merge','merge.RDS'))
+write.csv(dat, here::here('data_merge','reveal_merge.csv'))
 
 # SWAS --------------------------------------------------------------------
 
@@ -203,7 +203,8 @@ datSwas = map_df(swasFiles, read_york_gc_fid_lab) |>
   ) |> 
   rename(flightNumber = flight) |> 
   unnest(dat) |> 
-  select(-any_of(c("date","ALT_GIN", "LAT_GIN", "LON_GIN", "RH_LIQ", "no_u", "no2_u", "no_lod", "no2_lod", "co2_flag", "ch4_flag", "ch4_bias", "ch4_uncert", "co2_bias", "co2_uncert")))
+  select(-any_of(c("date", "RH_LIQ", "no_u", "no2_u", "no_lod", "no2_lod", "co2_flag", "ch4_flag", "ch4_bias", "ch4_uncert", "co2_bias", "co2_uncert"))) 
 
-saveRDS(datSwas, here::here('data','faam_merge','swasMerge.RDS'))
-write.csv(datSwas, here::here('data','faam_merge','swas_merge.csv'))
+
+saveRDS(datSwas, here::here('data_merge','swasMerge.RDS'))
+write.csv(datSwas, here::here('data_merge','swas_merge.csv'))

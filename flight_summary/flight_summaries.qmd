@@ -1,5 +1,8 @@
 ---
-title: "REducing aViation Emissions' uncertAin cLimate impacts: NO~x~"
+title: "REVEAL-NO~x~ Flight Summary"
+subtitle: "REducing aViation Emissions' uncertAin cLimate impacts: NO~x~"
+author:
+  name: Will Drysdale - will.drysdale@york.ac.uk
 theme:
   light: cosmo
   dark: solar
@@ -60,12 +63,12 @@ regions = tribble(
   54.50, -2.01, "Transect Land",
   55.80, -2.25, "Transect Land",
   55.80, -2.20, "Transect Land",
-  53.46,  0.66, "L602",
-  53.21,  2.61, "L602",
-  53.19,  2.61, "L602",
+  53.46,  0.55, "L602",
+  53.21,  2.70, "L602",
+  53.15,  2.70, "L602",
   53.30,  1.50, "L602",
-  53.43,  0.66, "L602",
-  53.46,  0.66, "L602",
+  53.43,  0.55, "L602",
+  53.46,  0.55, "L602",
   52.98,  1.05, "L603",
   52.90,  1.80, "L603",
   52.82,  2.40, "L603",
@@ -85,7 +88,7 @@ lim = tibble(
 ) |> 
   st_as_sf(coords = c("lon", "lat"), crs = "WGS84")
 
-dat = readRDS(here::here('data','faam_merge','merge.RDS')) |> 
+dat = readRDS(here::here('data_merge','merge.RDS')) |> 
   filter(flightNumber != "c392") |>  # remove test flight
   mutate(
     alt_flag = case_when(
@@ -97,14 +100,19 @@ dat = readRDS(here::here('data','faam_merge','merge.RDS')) |>
     alt_rate = abs(ALT_GIN-lag(ALT_GIN,2)) < 20
   )
 
-datSwas = readRDS(here::here('data','faam_merge','swasMerge.RDS')) |> 
-  pivot_longer(-c(start_sample_date_time, stop_sample_date_time, comments, flightNumber, swas_case, swas_bottle, gc_date_time)) |> 
+datSwas = readRDS(here::here('data_merge','swasMerge.RDS')) |> 
+  pivot_longer(
+    -c(start_sample_date_time, stop_sample_date_time, comments, flightNumber, swas_case, swas_bottle, gc_date_time, ALT_GIN, LAT_GIN, LON_GIN)
+  ) |> 
   mutate(
     type = ifelse(
       name %in% c("O3_TECO", "no_mr", "no2_mr", "co2_drymole", "ch4_drymole", "chl", "nh4", "no3", "org", "so4", "mass_bc_ugm3", "n_bc"),
       "other", 
       "voc")
-  )
+  ) |> 
+  st_as_sf(coords = c("LON_GIN", "LAT_GIN"), crs = "WGS84") |> 
+  st_join(regions) |> 
+  mutate(region = ifelse(is.na(region), "other", region))
 
 datSf = dat |> 
   st_as_sf(coords = c("LON_GIN", "LAT_GIN"), crs = "WGS84") |> 
@@ -168,20 +176,19 @@ ggplot(data.frame(x = seq(-100, 100, 1)), aes(x))+
 dev.off()
 ```
 
-
-> “The chain of events from emissions of NO~x~ to impacts on climate are complex and uncertain. Are these aviation NOx emissions responsible for a lot or a little warming or cooling? In this project we aim to constrain the uncertainty we have on these climate impacts by constraining the performance of models in representing the chemical cascades from aviation NOx emissions" - Professor Alex Archibald, speaking to [NCAS Comms](https://ncas.ac.uk/research-aircraft-measures-climate-important-nox-emissions-from-commercial-flights/)
-
 ------------------------------------------------------------------------
 
 This document provides a summary of the REVEAL-NO~x~ flights. It is primarily an overview of the flights and a discussion on processing the NO and NO~2~ data. It highlights other notable considerations, such as periods where flights passed through stratospheric air masses and biomass burning plumes. It also provides a brief overview of the VOC data from the SWAS canisters. 
 
-The code used to produce this document can be accessed on github, and the merged FAAM data can also be downloaded here. Efforts will be made to keep the merge up to date, but the versions on CEDA should always be considered the authoritative copies. The github repo includes code for downloading the data directly from CEDA using the faamr package.
+The code used to produce this document can be accessed on [github](https://github.com/willdrysdale/reveal), and used merged FAAM data which can be found in the repo [here]() - note no correction has been applied to this merge to account for the time lag between the different instrument inlets. The versions of the data on CEDA should always be considered the authoritative copies. The github repo includes code for downloading the data directly from CEDA using the [faamr](https://github.com/wacl-york/faamr) package.
 
 ------------------------------------------------------------------------
 
 ## Overview
 
-Eight flights aboard the [FAAM aircraft](https://www.faam.ac.uk/) were conducted between 2025/06/03 and 2025/06/12 (C409 - C418) following roughly the same flight plan, either clockwise or counter-clockwise.
+> “The chain of events from emissions of NO~x~ to impacts on climate are complex and uncertain. Are these aviation NOx emissions responsible for a lot or a little warming or cooling? In this project we aim to constrain the uncertainty we have on these climate impacts by constraining the performance of models in representing the chemical cascades from aviation NOx emissions" - Professor Alex Archibald, speaking to [NCAS Comms](https://ncas.ac.uk/research-aircraft-measures-climate-important-nox-emissions-from-commercial-flights/)
+
+Eight flights aboard the [FAAM aircraft](https://www.faam.ac.uk/) were conducted between 2025/06/03 and 2025/06/12 following roughly the same flight plan, either clockwise or counter-clockwise.
 
 The counter-clockwise case:
 
@@ -607,7 +614,7 @@ For quick examination, plotted below are the densities of NO and NO<sub>2</sub> 
 print(g_nox_density)
 ```
 
-## Stratospheric Intrusion - Evidence from O~3~, CH~4~, and RH
+## Stratospheric Intrusion - Evidence from O~3~, CH~4~, and Relative Humidity
 
 ```{r}
 
@@ -660,7 +667,7 @@ for(i in 1:length(flights)){
 
 ```
 
-Particularly in flights during the first week, (C409 - C413), there are periods where the aircraft flew through areas of stratospheric intrusion into the free troposphere. These are indicated by periods of elevated O~3~ and suppressed CH~4~ and RH. As a broad filter, periods where O~3~ > 300 ppbv and RH < 20 % helps identify these. During these CH~4~ tends to be < 1900 ppbv, though this threshold is less clear cut (see C409 and C410). 
+Particularly in flights during the first week (C409 - C413), there are periods where the aircraft flew through areas of stratospheric intrusion into the free troposphere. These are indicated by periods of elevated O~3~ and suppressed CH~4~ and RH. As a broad filter, periods where O~3~ > 300 ppbv and RH < 20 % helps identify these. During these CH~4~ tends to be < 1900 ppbv, though this threshold is less clear cut (see C409 and C410). 
 
 The below plots show these parameters as well at altitude and NO~x~ across all flights. C413 provides an excellent example of clear flight in the stratosphere, with the entire 1000 m leg meeting the above criteria, and the transition from free troposphere being evident as the aircraft changes height from 9000 m. Periods of the flight < 6000 m have been removed. 
 
@@ -681,6 +688,13 @@ map2(stratPlotList, toupper(names(stratPlotList)),
 :::
 
 ## Particles
+
+Sulfate, nitrate, ammonium, chloride and organic aerosol data from the aerosol mass spectrometer (AMS) are available for flights C409-10, C412-13 and C417-18. Black Carbon mass and number data from the single particle soot photometer (SP2) are available for flights C409-10, C412-13 and C416-18. Both are presented below averaged to 10 s. Particle size distributions from the scanning mobility particle sizer (SMPS) are available for C412-13, but are currently not shown in this document. 
+
+Biomass burning plumes were encountered during flights in the first week (C409 - C413), and responisble for much of the structure during observed.
+
+Users of these data should contact James Allan (james.allan@manchester.ac.uk) with any questions and for citation details.
+
 
 ### AMS
 
@@ -824,24 +838,99 @@ map2(sp2PlotList, toupper(names(sp2PlotList)),
 
 ## Whole Air Samples
 
+Whole Air Samples were spread around the flight tracks, targeting the 4 regions. The VOC concentrations in each bottle are shown below. Each has been given a bottle index per region and per flight, i.e. the L602 region of flight C409 has 2 bottles. Note C418 has 1 bottle taken outside of the defined regions (on the crossing between L603 and L602), and has been labled "other".
+
+Users of these data should contact Jim Hopkins (jim.hopkins@york.ac.uk) with any questions and for citation details.
+
 ```{r}
 
-p1 = datSwas |> 
+plotDatSwas = datSwas |> 
   filter(type == "voc") |> 
   pivot_wider() |> 
-  group_by(flightNumber) |> 
-  mutate(swas_bottle = row_number()) |> 
-  pivot_longer(-c(start_sample_date_time, stop_sample_date_time, comments, flightNumber, swas_case, swas_bottle, gc_date_time, type)) |> 
-  ggplot()+
-  geom_bar(aes(x = swas_bottle, y = value, fill = name), stat = "identity")+
-  facet_wrap(~flightNumber)+
-  guides(fill = "none")+
-  theme_minimal()
+  group_by(flightNumber, region) |> 
+  mutate(`Bottle Index` = row_number()) |> 
+  select(-contains("GIN")) |> 
+  pivot_longer(-c(start_sample_date_time, stop_sample_date_time, comments, flightNumber, swas_case, swas_bottle, gc_date_time, type, geometry, region, `Bottle Index`))
 
-plotly::ggplotly(p1)
+flights = plotDatSwas |> 
+  pull(flightNumber) |> 
+  unique()
+
+plotListSwas = list()
+
+for(i in 1:length(flights)){
+  
+  plotListSwas[[flights[i]]] = plotDatSwas |>
+    filter(flightNumber == flights[i]) |> 
+    ggplot()+
+    geom_bar(aes(x = `Bottle Index`, y = value, fill = name), stat = "identity")+
+    facet_wrap(~region)+
+    scale_x_continuous(name = "Bottle Index")+
+    scale_y_continuous(name = "VOC Concentration / ppbv")+
+    guides(fill = "none")+
+    theme_minimal()
+  
+  plotListSwas[[flights[i]]] = ggplotly(plotListSwas[[flights[i]]], dynamicTicks = T)
+  
+}
+
+```
+
+::: panel-tabset
+```{r, results='asis'}
+
+map2(plotListSwas, toupper(names(plotListSwas)),
+     \(x, y) knitr::knit_child(
+       text = c(paste0("## ",y),"```{r, fig.height=8}","x","```"),
+       envir = environment(), 
+       quiet = TRUE
+     )
+) |> 
+  unlist() |> 
+  cat(sep = "\n")
+
+```
+:::
+
+The below map shows where the bottles were taken on each flight and links the bottle index with SWAS case and SWAS bottle numbers, for use when exploring the raw data.
+
+```{r}
+
+plotDatSwasMap = plotDatSwas |> 
+  select(flightNumber, swas_case, swas_bottle, `Bottle Index`, region, geometry) |> 
+  distinct() |> 
+  rowwise() |> 
+  mutate(text = htmltools::HTML(paste0("Region: ",region, "<br>Bottle Index: ", `Bottle Index`, "<br>SWAS Case: ", swas_case, "<br>SWAS Bottle: ",swas_bottle)))
+
+flights = unique(plotDatSwasMap$flightNumber)
+
+mapSwas = leaflet() |> 
+  addTiles()
+
+for(i in 1:length(flights)){
+  mapSwas = mapSwas |> 
+    addCircleMarkers(
+      data = filter(plotDatSwasMap, flightNumber == flights[i]),
+      group = flights[i],
+      label = ~text,
+      opacity = 0.8
+    )
+}
+
+mapSwas = mapSwas |> 
+  addLayersControl(
+    baseGroups = flights,
+    options = layersControlOptions(
+      collapsed = FALSE
+    )
+  ) 
+
+mapSwas
 
 
 ```
+
+
 
 
 
