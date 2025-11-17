@@ -3,12 +3,39 @@ title: "REVEAL-NO~x~ Flight Summary"
 subtitle: "REducing aViation Emissions' uncertAin cLimate impacts: NO~x~"
 author:
   name: Will Drysdale - will.drysdale@york.ac.uk
+abstract: |
+  “The chain of events from emissions of NO~x~ to impacts on climate are complex and uncertain. Are these aviation NOx emissions responsible for a lot or a little warming or cooling? In this project we aim to constrain the uncertainty we have on these climate impacts by constraining the performance of models in representing the chemical cascades from aviation NOx emissions" - Professor Alex Archibald, speaking to [NCAS Comms](https://ncas.ac.uk/research-aircraft-measures-climate-important-nox-emissions-from-commercial-flights/)
 theme:
   light: cosmo
   dark: solar
 format: 
   html:
+    code-links:
+      - text: Github Repo
+        href: https://github.com/willdrysdale/reveal
+        icon: github
+      - text: faamr
+        href: https://github.com/wacl-york/faamr
+        icon: github
+    other-links:
+      - text: FAAM data on CEDA
+        href: https://data.ceda.ac.uk/badc/faam/data/2025
+        icon: database
+      - text: Time Series Merge
+        href: https://github.com/willdrysdale/reveal/blob/main/data_merge/reveal_merge.csv
+        icon: filetype-csv
+      - text: SWAS Time Merge
+        href: https://github.com/willdrysdale/reveal/blob/main/data_merge/swas_merge.csv
+        icon: filetype-csv
+    code-tools:
+      source: https://github.com/willdrysdale/reveal/blob/main/flight_summary/flight_summaries.qmd
+    language:
+        code-links-title: "Code"
+        other-links-title: "Data"
+        section-title-abstract: "Project Summary"
+        code-tools-menu-caption: "Document Source"
     toc: true
+    toc-expand: 2
     respect-user-color-scheme: true
     css:
       - https://cdn.knightlab.com/libs/juxtapose/latest/css/juxtapose.css
@@ -180,13 +207,11 @@ dev.off()
 
 This document provides a summary of the REVEAL-NO~x~ flights. It is primarily an overview of the flights and a discussion on processing the NO and NO~2~ data. It highlights other notable considerations, such as periods where flights passed through stratospheric air masses and biomass burning plumes. It also provides a brief overview of the VOC data from the SWAS canisters. 
 
-The code used to produce this document can be accessed on [github](https://github.com/willdrysdale/reveal), and used merged FAAM data which can be found in the repo [here]() - note no correction has been applied to this merge to account for the time lag between the different instrument inlets. The versions of the data on CEDA should always be considered the authoritative copies. The github repo includes code for downloading the data directly from CEDA using the [faamr](https://github.com/wacl-york/faamr) package.
+The code used to produce this document can be accessed on [github](https://github.com/willdrysdale/reveal), and used merged FAAM data. The versions of the data on [CEDA](https://data.ceda.ac.uk/badc/faam/data/2025) should always be considered the authoritative copies. The merged data can be found in the [repo](https://github.com/willdrysdale/reveal/tree/main/data_merge), and has been merged to a common 10 s averaged timestamp, or a mean of these 10 s values matching the sampling times of the SWAS bottles - note no correction has been applied to this merge to account for the time lag between the different instrument inlets. The github repo includes code for downloading the data directly from CEDA using the [faamr](https://github.com/wacl-york/faamr) package. 
 
 ------------------------------------------------------------------------
 
 ## Overview
-
-> “The chain of events from emissions of NO~x~ to impacts on climate are complex and uncertain. Are these aviation NOx emissions responsible for a lot or a little warming or cooling? In this project we aim to constrain the uncertainty we have on these climate impacts by constraining the performance of models in representing the chemical cascades from aviation NOx emissions" - Professor Alex Archibald, speaking to [NCAS Comms](https://ncas.ac.uk/research-aircraft-measures-climate-important-nox-emissions-from-commercial-flights/)
 
 Eight flights aboard the [FAAM aircraft](https://www.faam.ac.uk/) were conducted between 2025/06/03 and 2025/06/12 following roughly the same flight plan, either clockwise or counter-clockwise.
 
