@@ -21,7 +21,7 @@ coreDat = mirai({
         filePath, 
         startDate = startDate, 
         endDate = endDate,
-        selectVar = c("LAT_GIN", "LON_GIN", "ALT_GIN", "PS_RVSM", "PS_RVSM_FLAG", "TAT_ND_R"),
+        selectVar = c("LAT_GIN", "LON_GIN", "ALT_GIN", "PS_RVSM", "PS_RVSM_FLAG", "TAT_ND_R", "TAT_ND_R_FLAG"),
         dimensionName = "sps32",
         averageNanoString = "00:00:10"
       ) |> 
